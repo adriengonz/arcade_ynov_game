@@ -1,14 +1,12 @@
 import pygame
 import sqlite3
 import sys
-#import RPi.GPIO as GPIO
+import random
 
-
-# Connexion a la base SQLite
+# Connexion à la base SQLite
 conn = sqlite3.connect('game_data.db')
 cursor = conn.cursor()
 
-# Creation des tables
 cursor.executescript("""
 CREATE TABLE IF NOT EXISTS joueurs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,226 +27,210 @@ CREATE TABLE IF NOT EXISTS scores (
 """)
 conn.commit()
 
-'''
-# Configuration des pins GPIO
-GPIO.setmode(GPIO.BCM)
-joystick_pins = {
-    "up": 18,
-    "down": 17,
-    "left": 23,
-    "right": 22,
-    "button1": 24,
-    "button2": 25
-}
-for pin in joystick_pins.values():
-    GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-# Lecture des entrees joystick
-def read_joystick():
-    return {action: not GPIO.input(pin) for action, pin in joystick_pins.items()}
-'''
+# Classe Joueur
 class Joueur(pygame.sprite.Sprite):
-    def __init__(self, x, y):
+    def __init__(self, x, y, color, controls):
         super().__init__()
         self.image = pygame.Surface((50, 50))
-        self.image.fill((0, 255, 0))  # Vert pour le joueur 1
+        self.image.fill(color)
         self.rect = self.image.get_rect(center=(x, y))
+        self.vitesse = 5
         self.vie = 100
-
-    def update(self, joystick_input):
-        if joystick_input["up"]:
-            self.rect.y -= 5
-        if joystick_input["down"]:
-            self.rect.y += 5
-        if joystick_input["left"]:
-            self.rect.x -= 5
-        if joystick_input["right"]:
-            self.rect.x += 5
-
-class Projectile(pygame.sprite.Sprite):
-    def __init__(self, x, y):
-        super().__init__()
-        self.image = pygame.Surface((10, 10))
-        self.image.fill((255, 0, 0))  # Rouge pour le projectile
-        self.rect = self.image.get_rect(center=(x, y))
+        self.controls = controls
+        self.last_shot = pygame.time.get_ticks()
+        self.shot_delay = 500
 
     def update(self):
-        self.rect.x += 10
-        if self.rect.left > screen_width:
+        keys = pygame.key.get_pressed()
+        if keys[self.controls['left']] and self.rect.left > 0:
+            self.rect.x -= self.vitesse
+        if keys[self.controls['right']] and self.rect.right < screen_width:
+            self.rect.x += self.vitesse
+        if keys[self.controls['up']] and self.rect.top > 0:
+            self.rect.y -= self.vitesse
+        if keys[self.controls['down']] and self.rect.bottom < screen_height:
+            self.rect.y += self.vitesse
+
+    def can_shoot(self):
+        now = pygame.time.get_ticks()
+        if now - self.last_shot > self.shot_delay:
+            self.last_shot = now
+            return True
+        return False
+
+# Classe Projectile
+class Projectile(pygame.sprite.Sprite):
+    def __init__(self, x, y, direction, color, owner):
+        super().__init__()
+        self.image = pygame.Surface((10, 10))
+        self.image.fill(color)
+        self.rect = self.image.get_rect(center=(x, y))
+        self.vitesse = 10 * direction
+        self.owner = owner
+
+    def update(self):
+        self.rect.x += self.vitesse
+        if self.rect.right < 0 or self.rect.left > screen_width:
             self.kill()
 
-#Gestion du clavier virtuel
-alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-selected_letter = 0
-
-def draw_keyboard():
-    for i, letter in enumerate(alphabet):
-        color = (255, 255, 255) if i == selected_letter else (100, 100, 100)
-        text = font.render(letter, True, color)
-        screen.blit(text, (50 + i * 20, screen_height - 50))
-
-def handle_keyboard_input(joystick_input):
-    global selected_letter
-    if joystick_input["right"]:
-        selected_letter = (selected_letter + 1) % len(alphabet)
-    elif joystick_input["left"]:
-        selected_letter = (selected_letter - 1) % len(alphabet)
-
-# Calcul du score
-def calculer_score(vie_restante_joueur1, vie_restante_joueur2, temps_ecoule):
-    return int((vie_restante_joueur1 - vie_restante_joueur2) * (100 / temps_ecoule))
-
-
+# Initialisation
 pygame.init()
-
-# Dimensions de la fenêtre
 screen_width, screen_height = 800, 600
 screen = pygame.display.set_mode((screen_width, screen_height))
-pygame.display.set_caption("Shoot'em Up")
+pygame.display.set_caption("Duel Multijoueur")
 clock = pygame.time.Clock()
 
-# Couleurs
+# Couleurs et police
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
-
-# Police
+YELLOW = (255, 255, 0)
 font = pygame.font.Font(None, 36)
 
-# Variable pour suivre l'ecran actuel
 current_screen = "menu"
 
-# Fonction pour dessiner du texte centre
+# Fonctions utilitaires
 def draw_text(text, font, color, surface, x, y):
     text_obj = font.render(text, True, color)
     text_rect = text_obj.get_rect(center=(x, y))
     surface.blit(text_obj, text_rect)
 
-# Fonction pour gerer le menu principal
 def menu_principal():
     global current_screen
+    selected_option = 0
+    options = ["Jouer", "Options", "Instructions", "Quitter"]
     running = True
-
     while running:
         screen.fill(BLACK)
-        draw_text("Menu Principal", font, WHITE, screen, screen_width // 2, screen_height // 2 - 100)
-        draw_text("1. Jouer", font, WHITE, screen, screen_width // 2, screen_height // 2)
-        draw_text("2. Options", font, WHITE, screen, screen_width // 2, screen_height // 2 + 50)
-        draw_text("3. Instructions", font, WHITE, screen, screen_width // 2, screen_height // 2 + 100)
-        draw_text("4. Quitter", font, WHITE, screen, screen_width // 2, screen_height // 2 + 150)
-
+        for i, option in enumerate(options):
+            color = WHITE if i == selected_option else (100, 100, 100)
+            text = font.render(f"{'->' if i == selected_option else '   '} {option}", True, color)
+            screen.blit(text, (screen_width // 2 - 50, screen_height // 2 - 100 + i * 50))
+        pygame.display.flip()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_1:  # Jouer
-                    current_screen = "jeu"
+                if event.key == pygame.K_DOWN:
+                    selected_option = (selected_option + 1) % len(options)
+                    pygame.time.wait(150)
+                elif event.key == pygame.K_UP:
+                    selected_option = (selected_option - 1) % len(options)
+                    pygame.time.wait(150)
+                elif event.key == pygame.K_RETURN:
+                    if selected_option == 0:
+                        current_screen = "jeu"
+                    elif selected_option == 1:
+                        current_screen = "options"
+                    elif selected_option == 2:
+                        current_screen = "instructions"
+                    elif selected_option == 3:
+                        pygame.quit()
+                        sys.exit()
                     running = False
-                elif event.key == pygame.K_2:  # Options
-                    current_screen = "options"
-                    running = False
-                elif event.key == pygame.K_3:  # Instructions
-                    current_screen = "instructions"
-                    running = False
-                elif event.key == pygame.K_4:  # Quitter
-                    pygame.quit()
-                    sys.exit()
 
-        pygame.display.flip()
-        clock.tick(60)
-
-# Fonction pour gerer l'ecran de jeu
 def ecran_de_jeu():
     global current_screen
+
+    # Clavier Mac : ZQSD + E pour Joueur 1, Flèches + Entrée pour Joueur 2
+    controls_p1 = {'up': pygame.K_z, 'down': pygame.K_s, 'left': pygame.K_q, 'right': pygame.K_d, 'shoot': pygame.K_e}
+    controls_p2 = {'up': pygame.K_UP, 'down': pygame.K_DOWN, 'left': pygame.K_LEFT, 'right': pygame.K_RIGHT, 'shoot': pygame.K_RETURN}
+
+    joueur1 = Joueur(100, screen_height // 2, GREEN, controls_p1)
+    joueur2 = Joueur(screen_width - 100, screen_height // 2, BLUE, controls_p2)
+
+    joueurs = pygame.sprite.Group(joueur1, joueur2)
+    projectiles = pygame.sprite.Group()
+
     running = True
-
     while running:
-        screen.fill(BLUE)  # Fond bleu pour l'ecran de jeu
-
-        draw_text("Écran de Jeu", font, WHITE, screen, screen_width // 2, screen_height // 2 - 100)
-        draw_text("Appuyez sur ECHAP pour retourner au menu principal", font,
-                  WHITE,
-                  screen,
-                  screen_width // 2,
-                  screen_height - 50)
-
+        screen.fill(BLACK)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:  # Retour au menu principal
-                    current_screen = "menu"
-                    running = False
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                current_screen = "menu"
+                running = False
+
+        keys = pygame.key.get_pressed()
+        if keys[joueur1.controls['shoot']] and joueur1.can_shoot():
+            proj = Projectile(joueur1.rect.right, joueur1.rect.centery, 1, RED, joueur1)
+            projectiles.add(proj)
+        if keys[joueur2.controls['shoot']] and joueur2.can_shoot():
+            proj = Projectile(joueur2.rect.left, joueur2.rect.centery, -1, YELLOW, joueur2)
+            projectiles.add(proj)
+
+        joueurs.update()
+        projectiles.update()
+
+        for projectile in projectiles:
+            if projectile.owner == joueur1 and joueur2.rect.colliderect(projectile.rect):
+                joueur2.vie -= 10
+                projectile.kill()
+            elif projectile.owner == joueur2 and joueur1.rect.colliderect(projectile.rect):
+                joueur1.vie -= 10
+                projectile.kill()
+
+        if joueur1.vie <= 0 or joueur2.vie <= 0:
+            gagnant = "Joueur 1" if joueur2.vie <= 0 else "Joueur 2"
+            draw_text(f"{gagnant} a gagné !", font, WHITE, screen, screen_width // 2, screen_height // 2)
+            pygame.display.flip()
+            pygame.time.wait(3000)
+            current_screen = "menu"
+            break
+
+        joueurs.draw(screen)
+        projectiles.draw(screen)
+
+        pygame.draw.rect(screen, RED, (20, 20, joueur1.vie * 2, 20))
+        pygame.draw.rect(screen, BLUE, (screen_width - 220, 20, joueur2.vie * 2, 20))
+
+        draw_text("Joueur 1", font, WHITE, screen, 100, 50)
+        draw_text("Joueur 2", font, WHITE, screen, screen_width - 100, 50)
 
         pygame.display.flip()
         clock.tick(60)
 
-# Fonction pour gerer l'ecran d'options
 def ecran_options():
     global current_screen
     running = True
-
     while running:
-        screen.fill(GREEN)  # Fond vert pour l'ecran d'options
-
-        draw_text("Options", font,
-                  BLACK,
-                  screen,
-                  screen_width // 2,
-                  screen_height // 2 - 100)
-        draw_text("Appuyez sur ECHAP pour retourner au menu principal", font,
-                  BLACK,
-                  screen,
-                  screen_width // 2,
-                  screen_height - 50)
-
+        screen.fill(GREEN)
+        draw_text("Options", font, BLACK, screen, screen_width // 2, screen_height // 2 - 100)
+        draw_text("Appuyez sur ECHAP pour retourner au menu principal", font, BLACK, screen, screen_width // 2, screen_height - 50)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:  # Retour au menu principal
-                    current_screen = "menu"
-                    running = False
-
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                current_screen = "menu"
+                running = False
         pygame.display.flip()
         clock.tick(60)
 
-# Fonction pour gerer l'ecran d'instructions
 def ecran_instructions():
     global current_screen
     running = True
-
     while running:
-        screen.fill(RED)  # Fond rouge pour l'ecran d'instructions
-
-        draw_text("Instructions", font,
-                  WHITE,
-                  screen,
-                  screen_width // 2,
-                  screen_height // 2 - 100)
-        draw_text("Appuyez sur ECHAP pour retourner au menu principal", font,
-                  WHITE,
-                  screen,
-                  screen_width // 2,
-                  screen_height - 50)
-
+        screen.fill(RED)
+        draw_text("Instructions", font, WHITE, screen, screen_width // 2, screen_height // 2 - 100)
+        draw_text("Joueur 1 : ZQSD + E | Joueur 2 : Flèches + Entrée", font, WHITE, screen, screen_width // 2, screen_height // 2)
+        draw_text("Appuyez sur ECHAP pour retourner au menu principal", font, WHITE, screen, screen_width // 2, screen_height - 50)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:  # Retour au menu principal
-                    current_screen = "menu"
-                    running = False
-
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                current_screen = "menu"
+                running = False
         pygame.display.flip()
         clock.tick(60)
 
+# Boucle principale
 while True:
     if current_screen == "menu":
         menu_principal()

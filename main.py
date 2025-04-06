@@ -39,6 +39,7 @@ class Joueur(pygame.sprite.Sprite):
         self.controls = controls
         self.last_shot = pygame.time.get_ticks()
         self.shot_delay = 500
+        self.nom = ""
 
     def update(self):
         keys = pygame.key.get_pressed()
@@ -132,6 +133,127 @@ def menu_principal():
                         sys.exit()
                     running = False
 
+def saisie_nom_joueur(joueur):
+    global current_screen
+    
+
+    
+    # Configuration du clavier virtuel
+    clavier = [
+        "ABCDEFG",
+        "HIJKLMN",
+        "OPQRSTU",
+        "VWXYZ_<",
+        "VALIDER"
+    ]
+    
+    ligne_selectionnee = 0
+    colonne_selectionnee = 0
+
+    # Nom temporaire pour l'édition
+    nom_temp = ""
+    
+    running = True
+    while running:
+        screen.fill(BLACK)
+        
+        # Affichage du titre
+        draw_text(f"Entrez le nom du Joueur", font, WHITE, screen, screen_width // 2, 50)
+        
+        # Affichage du nom en cours de saisie
+        draw_text(f"Nom: {nom_temp}", font, WHITE, screen, screen_width // 2, 100)
+        
+        # Affichage du clavier virtuel
+        for i, ligne in enumerate(clavier):
+            for j, lettre in enumerate(ligne):
+                # Dernière ligne (VALIDER)
+                if i == len(clavier) - 1:
+                    if ligne_selectionnee == i:
+                        couleur = YELLOW  # Surbrillance
+                    else:
+                        couleur = WHITE
+                    draw_text(lettre, font, couleur, screen, screen_width // 2, 200 + i * 50)
+                    break
+                
+                # Calcul de la position de la lettre
+                x = screen_width // 2 - (len(ligne) * 30) // 2 + j * 30
+                y = 200 + i * 50
+                
+                # Détermination de la couleur (surbrillance si sélectionnée)
+                couleur = YELLOW if (i == ligne_selectionnee and j == colonne_selectionnee) else WHITE
+                
+                # Affichage de la lettre
+                draw_text(lettre, font, couleur, screen, x, y)
+        
+        # Instructions
+        draw_text("Utilisez les flèches pour naviguer", font, WHITE, screen, screen_width // 2, screen_height - 100)
+        draw_text("Appuyez sur ENTRÉE pour sélectionner", font, WHITE, screen, screen_width // 2, screen_height - 60)
+        
+        pygame.display.flip()
+        
+        # Gestion des événements
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    current_screen = "menu"
+                    joueur.nom = f"Joueur"
+                
+                # Navigation dans le clavier
+                elif event.key == pygame.K_UP:
+                    ligne_selectionnee = (ligne_selectionnee - 1) % len(clavier)
+                    # Si on arrive à la ligne VALIDER, pas de colonne
+                    if ligne_selectionnee == len(clavier) - 1:
+                        colonne_selectionnee = 0
+                    # Sinon, s'assurer que la colonne est valide pour la nouvelle ligne
+                    elif colonne_selectionnee >= len(clavier[ligne_selectionnee]):
+                        colonne_selectionnee = len(clavier[ligne_selectionnee]) - 1
+                
+                elif event.key == pygame.K_DOWN:
+                    ligne_selectionnee = (ligne_selectionnee + 1) % len(clavier)
+                    # Si on arrive à la ligne VALIDER, pas de colonne
+                    if ligne_selectionnee == len(clavier) - 1:
+                        colonne_selectionnee = 0
+                    # Sinon, s'assurer que la colonne est valide pour la nouvelle ligne
+                    elif colonne_selectionnee >= len(clavier[ligne_selectionnee]):
+                        colonne_selectionnee = len(clavier[ligne_selectionnee]) - 1
+                
+                elif event.key == pygame.K_LEFT and ligne_selectionnee < len(clavier) - 1:
+                    colonne_selectionnee = (colonne_selectionnee - 1) % len(clavier[ligne_selectionnee])
+                
+                elif event.key == pygame.K_RIGHT and ligne_selectionnee < len(clavier) - 1:
+                    colonne_selectionnee = (colonne_selectionnee + 1) % len(clavier[ligne_selectionnee])
+                
+                # Sélection d'une lettre ou action
+                elif event.key == pygame.K_RETURN:
+                    # Si on est sur la ligne VALIDER
+                    if ligne_selectionnee == len(clavier) - 1:
+                        # Utiliser le nom par défaut si vide
+                        if not nom_temp:
+                            nom_temp = f"Joueur {joueur_num}"
+                        joueur.nom = nom_temp
+                        return
+                    else:
+                        # Récupération de la lettre sélectionnée
+                        lettre = clavier[ligne_selectionnee][colonne_selectionnee]
+                        
+                        # Traitement selon la lettre
+                        if lettre == '<':  # Effacer
+                            nom_temp = nom_temp[:-1] if nom_temp else ""
+                        elif lettre == '_':  # Espace
+                            nom_temp += " "
+                        else:  # Lettre normale
+                            nom_temp += lettre
+        
+        clock.tick(60)
+    
+    # Si on sort de la boucle sans return, on assigne un nom par défaut
+    joueur.nom = f"Joueur"
+
+
 def ecran_de_jeu():
     global current_screen
 
@@ -141,6 +263,17 @@ def ecran_de_jeu():
 
     joueur1 = Joueur(100, screen_height // 2, GREEN, controls_p1)
     joueur2 = Joueur(screen_width - 100, screen_height // 2, BLUE, controls_p2)
+
+    # Saisie des noms des joueurs
+    saisie_nom_joueur(joueur1)
+    # Vérifier si l'utilisateur a quitté pendant la saisie
+    if current_screen == "menu":
+        return
+        
+    saisie_nom_joueur(joueur2)
+    # Vérifier si l'utilisateur a quitté pendant la saisie
+    if current_screen == "menu":
+        return
 
     joueurs = pygame.sprite.Group(joueur1, joueur2)
     projectiles = pygame.sprite.Group()
@@ -176,7 +309,7 @@ def ecran_de_jeu():
                 projectile.kill()
 
         if joueur1.vie <= 0 or joueur2.vie <= 0:
-            gagnant = "Joueur 1" if joueur2.vie <= 0 else "Joueur 2"
+            gagnant = joueur1.nom if joueur2.vie <= 0 else joueur2.nom
             draw_text(f"{gagnant} a gagné !", font, WHITE, screen, screen_width // 2, screen_height // 2)
             pygame.display.flip()
             pygame.time.wait(3000)
@@ -189,8 +322,8 @@ def ecran_de_jeu():
         pygame.draw.rect(screen, RED, (20, 20, joueur1.vie * 2, 20))
         pygame.draw.rect(screen, BLUE, (screen_width - 220, 20, joueur2.vie * 2, 20))
 
-        draw_text("Joueur 1", font, WHITE, screen, 100, 50)
-        draw_text("Joueur 2", font, WHITE, screen, screen_width - 100, 50)
+        draw_text(joueur1.nom, font, WHITE, screen, 100, 50)
+        draw_text(joueur2.nom, font, WHITE, screen, screen_width - 100, 50)
 
         pygame.display.flip()
         clock.tick(60)
